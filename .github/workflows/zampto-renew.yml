@@ -16,7 +16,7 @@ jobs:
 
     permissions:
       actions: write
-      contents: read
+      contents: write
 
     steps:
       - name: 拉取仓库代码
@@ -52,7 +52,7 @@ jobs:
             exit 1
           fi
 
-          bash <(wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh)
+          bash setup_proxy.sh
 
       - name: 检查本地代理
         run: |
@@ -92,6 +92,33 @@ jobs:
             --server-args="-screen 0 1920x1080x24" \
             python3 renew.py
 
+      # --- 新增的防暂停代码开始 ---
+      - name: Commit time.txt to repo
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 如果 time.txt 不存在，说明是第一次运行
+          if [ ! -f time.txt ]; then
+            echo "首次生成时间：$(date +'%Y-%m-%d %H:%M:%S')" > time.txt
+          else
+            echo "$(date +'%Y-%m-%d %H:%M:%S')" > time.txt
+          fi
+          
+          git add time.txt
+          
+          # 如果有更改再提交
+          if git diff --cached --quiet; then
+            echo "无变化，无需提交"
+          else
+            git commit -m "⏱️ 更新时间文件: $(date +'%Y-%m-%d %H:%M:%S')"
+            git push origin HEAD:main
+          fi
+      # --- 新增的防暂停代码结束 ---
+
       - name: 上传错误截图
         if: failure()
         uses: actions/upload-artifact@v4
@@ -101,24 +128,24 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
-      - name: 清理旧工作流记录
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          runs=$(gh run list \
-            --workflow="${{ github.workflow }}" \
-            --limit=100 \
-            --json databaseId \
-            --jq '.[].databaseId')
+      # - name: 清理旧工作流记录
+      #   if: always()
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}
+      #   run: |
+      #     runs=$(gh run list \
+      #       --workflow="${{ github.workflow }}" \
+      #       --limit=100 \
+      #       --json databaseId \
+      #       --jq '.[].databaseId')
 
-          count=0
+      #     count=0
 
-          for run_id in $runs; do
-            count=$((count + 1))
+      #     for run_id in $runs; do
+      #       count=$((count + 1))
 
-            if [ "$count" -gt 1 ]; then
-              echo "删除运行记录：$run_id"
-              gh run delete "$run_id" || true
-            fi
-          done
+      #       if [ "$count" -gt 1 ]; then
+      #         echo "删除运行记录：$run_id"
+      #         gh run delete "$run_id" || true
+      #       fi
+      #     done
