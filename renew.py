@@ -84,7 +84,7 @@ def send_tg_message(
     photo_path: str | None = None,
 ) -> bool:
     if not TG_BOT_TOKEN or not TG_CHAT_ID:
-        print("ℹ️ 未配置 TG_BOT_TOKEN 或 TG_CHAT_ID，跳过 Telegram 推送。")
+        # print("ℹ️ 未配置 TG_BOT_TOKEN 或 TG_CHAT_ID，跳过 Telegram 推送。")
         return False
 
     text = (
@@ -251,7 +251,7 @@ def turnstile_solved(sb) -> bool:
         return False
 
 
-def handle_turnstile(sb, max_attempts: int = 3, timeout_per_attempt: int = 20) -> bool:
+def handle_turnstile(sb, max_attempts: int = 6, timeout_per_attempt: int = 10) -> bool:
     print(
         "🔍 处理 Cloudflare Turnstile 验证"
         f"（最多 {max_attempts} 次，每次 {timeout_per_attempt} 秒超时）..."
@@ -501,7 +501,7 @@ def login(sb) -> bool:
     # 登录前先检查挑战是否存在。
     if turnstile_exists(sb):
         print("🛡️ 检测到 Turnstile 验证，开始处理...")
-        if not handle_turnstile(sb, max_attempts=3, timeout_per_attempt=20):
+        if not handle_turnstile(sb):
             print("❌ 登录阶段 Turnstile 未通过")
             notify_login_failure(
                 sb,
@@ -598,7 +598,7 @@ def login(sb) -> bool:
         # 这样避免“页面刚出现验证组件，脚本却只顾等 URL”的情况。
         if second in {3, 6, 10} and turnstile_exists(sb) and not turnstile_solved(sb):
             print("🛡️ 登录提交后检测到新的 Turnstile 验证")
-            if handle_turnstile(sb, max_attempts=2, timeout_per_attempt=20):
+            if handle_turnstile(sb):
                 print("✅ 提交后 Turnstile 已通过，再提交一次登录表单")
                 try:
                     sb.press_keys(PASSWORD_SELECTOR, "\n")
@@ -757,7 +757,7 @@ def renew_one_server_by_id(sb, server_id: str, index: int) -> dict:
         # 没有立即变化时检查验证组件。
         if turnstile_exists(sb) and not turnstile_solved(sb):
             print("🛡️ 续期阶段检测到 Turnstile 验证")
-            if not handle_turnstile(sb, max_attempts=3, timeout_per_attempt=20):
+            if not handle_turnstile(sb):
                 print("⚠️ 续期阶段 Turnstile 未通过，但仍继续刷新确认最终状态")
 
         print("⏳ 等待 5 秒并重新加载详情页确认最终状态...")
@@ -857,8 +857,10 @@ def renew_all_servers_by_id(sb) -> list[dict]:
     if not server_ids:
         path = "no_servers.png"
         save_screenshot(sb, path)
+        print("❌ 未获取到任何服务器 ID")
         send_tg_message("❌", "执行失败", "未获取到任何服务器 ID", path)
-        return []
+        raise SystemExit(1)
+        # return []
 
     print(f"📋 待续期服务器 ID 列表: {server_ids}")
     results: list[dict] = []
@@ -894,7 +896,7 @@ def renew_all_servers_by_id(sb) -> list[dict]:
     print("=" * 50)
     print(detail)
     print("=" * 50)
-
+    if success == 0: raise SystemExit(1)
     return results
 
 
