@@ -743,7 +743,7 @@ def renew_one_server_by_id(sb, server_id: str, index: int) -> dict:
         quick_minutes = extract_remaining_minutes(sb)
         if old_minutes is not None and quick_minutes is not None:
             delta = quick_minutes - old_minutes
-            if delta > 1000 or (old_minutes == 0 and quick_minutes > 0):
+            if delta > 500 or (old_minutes == 0 and quick_minutes > 0):
                 result["status"] = "success"
                 result["detail"] = (
                     f"续期成功：{format_minutes(old_minutes)} -> "
@@ -757,8 +757,10 @@ def renew_one_server_by_id(sb, server_id: str, index: int) -> dict:
         # 没有立即变化时检查验证组件。
         if turnstile_exists(sb) and not turnstile_solved(sb):
             print("🛡️ 续期阶段检测到 Turnstile 验证")
+            save_screenshot(sb, f"turnstile_before_{server_id}.png")
             if not handle_turnstile(sb):
                 print("⚠️ 续期阶段 Turnstile 未通过，但仍继续刷新确认最终状态")
+            save_screenshot(sb, f"turnstile_after_{server_id}.png")
 
         print("⏳ 等待 5 秒并重新加载详情页确认最终状态...")
         time.sleep(5)
@@ -778,7 +780,7 @@ def renew_one_server_by_id(sb, server_id: str, index: int) -> dict:
 
         if old_minutes is not None and new_minutes is not None:
             delta = new_minutes - old_minutes
-            if delta > 1000 or (old_minutes == 0 and new_minutes > 0):
+            if delta > 500 or (old_minutes == 0 and new_minutes > 0):
                 result["status"] = "success"
                 result["detail"] = (
                     f"续期成功：{format_minutes(old_minutes)} -> "
