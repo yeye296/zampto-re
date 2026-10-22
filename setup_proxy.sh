@@ -20,7 +20,11 @@ fi
 command -v curl &>/dev/null && COMMAND="curl -so" || command -v wget &>/dev/null && COMMAND="wget -qO" || { red "Error: neither curl nor wget found, please install one of them." >&2; exit 1; }
 
 echo "[INFO] 获取 sing-box 最新版本..."
-latest_version=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==false)][0].tag_name | sub("^v"; "")')
+latest_version=$(curl -fsS --retry 3 \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/SagerNet/sing-box/releases" \
+  | jq -r 'if type=="array" then [.[] | select(.prerelease==false and .draft==false)][0].tag_name // empty | sub("^v"; "") else empty end') || latest_version=""
+
 if [ -z "$latest_version" ]; then
   echo "[ERROR] 无法获取 sing-box 最新版本,将下载v1.13.14"
   export latest_version=1.13.14
