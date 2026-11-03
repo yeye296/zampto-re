@@ -71,7 +71,88 @@ def safe_title(sb) -> str:
     except Exception:
         return ""
 
-
+def log(x):
+    print(x, flush=True)
+    
+def handle_cookie_consent(sb) -> bool:
+    """
+    处理 Cookie 同意弹窗 (SeleniumBase 修正版)
+    策略：查找常见的 Cookie 同意按钮并点击
+    """
+    log("🍪 检查是否有 Cookie 同意弹窗...")
+    
+    # 1. 列表补充了专门匹配 <button>Accept</button> 的选择器
+    cookie_selectors = [
+        '//button[normalize-space(text())="Accept"]',  # 👈 准确匹配文本为 Accept 的 button
+        '//button[contains(., "Accept")]',            # 👈 模糊匹配包含 Accept 的 button
+        'button[data-cky-tag="accept-button"]',
+        'button[id*="accept"]',
+        '//button[contains(., "Accept All")]',
+        '//button[contains(., "Accept all")]',
+        '//button[contains(., "同意")]',
+        '//button[contains(., "全部接受")]',
+        '//button[contains(., "我同意")]',
+        'button[class*="accept"]',
+        '//a[contains(., "Accept")]',
+        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+        '.cookie-accept',
+    ]
+    
+    # 2. 拼接 XPath 时同样加上匹配项
+    combined_xpath = " | ".join([
+        '//button[contains(., "Accept")]',            # 👈 修复：加入了 Accept 的 button 匹配
+        '//button[@data-cky-tag="accept-button"]',
+        '//button[contains(@id, "accept")]',
+        '//button[contains(., "Accept All")]',
+        '//button[contains(., "Accept all")]',
+        '//button[contains(., "同意")]',
+        '//button[contains(., "全部接受")]',
+        '//button[contains(., "我同意")]',
+        '//button[contains(@class, "accept")]',
+        '//a[contains(., "Accept")]',
+        '//*[@id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll"]',
+        '//*[contains(@class, "cookie-accept")]'
+    ])
+    
+    try:
+        sb.sleep(0.5)
+        
+        # 主动等待任意一个 Cookie 按钮出现（最多等待 3 秒）
+        try:
+            sb.wait_for_element_visible(combined_xpath, timeout=3)
+        except Exception:
+            log("未检测到 Cookie 弹窗（等待超时 3s）")
+            return False
+        
+        # 遍历选择器列表，找到第一个可见的按钮并点击
+        for selector in cookie_selectors:
+            try:
+                if sb.is_element_visible(selector):
+                    log(f"👀 检测到 Cookie 弹窗，正在点击: {selector}")
+                    
+                    # 尝试普通点击，若被动画/遮挡阻拦则自动切换为 JS 点击
+                    try:
+                        sb.click(selector)
+                    except Exception:
+                        log("⚠️ 普通点击失败，尝试使用 JS 强制点击...")
+                        sb.js_click(selector)
+                        
+                    # 等待弹窗消失动画完成
+                    sb.sleep(1.0)
+                    
+                    log("✅ Cookie 弹窗已成功处理")
+                    return True
+                        
+            except Exception:
+                continue
+        
+        log("ℹ️ 未检测到 Cookie 弹窗，无需处理")
+        return False
+        
+    except Exception as e:
+        log(f"⚠️ 处理 Cookie 弹窗时出现异常 (已忽略): {e}")
+        return False
+    
 # ============================================================
 # Telegram 通知：支持图片，图片失败自动退回文字消息
 # ============================================================
@@ -727,6 +808,7 @@ def renew_one_server_by_id(sb, server_id: str, index: int) -> dict:
         old_minutes = extract_remaining_minutes(sb)
         print(f"📅 原始剩余时间: {format_minutes(old_minutes)}")
 
+        handle_cookie_consent(sb)
         print("🖱️ 尝试点击 Renew Server 按钮...")
         if not click_renew_button(sb):
             result["status"] = "error"
