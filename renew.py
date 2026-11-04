@@ -76,81 +76,102 @@ def log(x):
     
 def handle_cookie_consent(sb) -> bool:
     """
-    处理 Cookie 同意弹窗 (SeleniumBase 修正版)
-    策略：查找常见的 Cookie 同意按钮并点击
+    处理 Cookie 同意弹窗 (支持常规弹窗及 Google CMP / Funding Choices iframe)
     """
     log("🍪 检查是否有 Cookie 同意弹窗...")
-    
-    # 1. 列表补充了专门匹配 <button>Accept</button> 的选择器
+
+    # 1. 扩充选择器：增加 "Consent"、Google CMP 专属类名 (.fc-cta-consent)
     cookie_selectors = [
-        '//button[normalize-space(text())="Accept"]',  # 👈 准确匹配文本为 Accept 的 button
-        '//button[contains(., "Accept")]',            # 👈 模糊匹配包含 Accept 的 button
+        # Google Funding Choices 常见类名
+        "button.fc-cta-consent",
+        ".fc-consent-root button.fc-cta-consent",
+        "button.fc-button.fc-cta-consent",
+        # 文本匹配（精准与模糊）
+        '//button[normalize-space(text())="Consent"]',
+        '//button[contains(., "Consent") and not(contains(., "Do not"))]',
+        '//button[normalize-space(text())="Accept"]',
+        '//button[contains(., "Accept")]',
+        '//button[contains(., "Accept All")]',
+        '//button[contains(., "Accept all")]',
+        '//button[contains(., "同意")]',
+        '//button[contains(., "全部接受")]',
         'button[data-cky-tag="accept-button"]',
         'button[id*="accept"]',
-        '//button[contains(., "Accept All")]',
-        '//button[contains(., "Accept all")]',
-        '//button[contains(., "同意")]',
-        '//button[contains(., "全部接受")]',
-        '//button[contains(., "我同意")]',
-        'button[class*="accept"]',
-        '//a[contains(., "Accept")]',
         '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
-        '.cookie-accept',
     ]
-    
-    # 2. 拼接 XPath 时同样加上匹配项
+
     combined_xpath = " | ".join([
-        '//button[contains(., "Accept")]',            # 👈 修复：加入了 Accept 的 button 匹配
-        '//button[@data-cky-tag="accept-button"]',
-        '//button[contains(@id, "accept")]',
-        '//button[contains(., "Accept All")]',
-        '//button[contains(., "Accept all")]',
+        '//button[contains(@class, "fc-cta-consent")]',
+        '//button[normalize-space(text())="Consent"]',
+        '//button[contains(., "Consent") and not(contains(., "Do not"))]',
+        '//button[contains(., "Accept")]',
         '//button[contains(., "同意")]',
-        '//button[contains(., "全部接受")]',
-        '//button[contains(., "我同意")]',
-        '//button[contains(@class, "accept")]',
-        '//a[contains(., "Accept")]',
-        '//*[@id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll"]',
-        '//*[contains(@class, "cookie-accept")]'
     ])
-    
-    try:
-        sb.sleep(0.5)
-        
-        # 主动等待任意一个 Cookie 按钮出现（最多等待 3 秒）
-        try:
-            sb.wait_for_element_visible(combined_xpath, timeout=3)
-        except Exception:
-            log("未检测到 Cookie 弹窗（等待超时 3s）")
-            return False
-        
-        # 遍历选择器列表，找到第一个可见的按钮并点击
+
+    def try_click_in_current_context():
+        """尝试在当前上下文（主页面或已切入的 iframe）点击"""
         for selector in cookie_selectors:
             try:
                 if sb.is_element_visible(selector):
-                    log(f"👀 检测到 Cookie 弹窗，正在点击: {selector}")
-                    
-                    # 尝试普通点击，若被动画/遮挡阻拦则自动切换为 JS 点击
+                    log(f"👀 检测到 Cookie 弹窗按钮，正在点击: {selector}")
                     try:
                         sb.click(selector)
                     except Exception:
-                        log("⚠️ 普通点击失败，尝试使用 JS 强制点击...")
                         sb.js_click(selector)
-                        
-                    # 等待弹窗消失动画完成
                     sb.sleep(1.0)
-                    
-                    log("✅ Cookie 弹窗已成功处理")
                     return True
-                        
             except Exception:
                 continue
-        
+        return False
+
+    try:
+        sb.sleep(0.5)
+
+        # 尝试 1：先在主页面中查找并点击
+        try:
+            if sb.is_element_visible(combined_xpath):
+                if try_click_in_current_context():
+                    log("✅ Cookie 弹窗已在主页面处理完成")
+                    return True
+        except Exception:
+            pass
+
+        # 尝试 2：如果主页面找不到，检查是否存在 Google CMP iframe 并切入
+        iframe_selectors = [
+            'iframe[name*="googlefc"]',
+            'iframe[id*="googlefc"]',
+            'iframe[src*="fundingchoices"]',
+            'iframe.fc-dialog',
+            'iframe[title*="consent"]'
+        ]
+
+        for iframe_sel in iframe_selectors:
+            try:
+                if sb.is_element_present(iframe_sel):
+                    log(f"🔍 发现可能的 CMP iframe: {iframe_sel}，尝试切换上下文...")
+                    sb.switch_to_frame(iframe_sel)
+                    
+                    # 在 iframe 内部尝试查找并点击
+                    if try_click_in_current_context():
+                        sb.switch_to_default_content()
+                        log("✅ Cookie 弹窗已在 iframe 中成功处理")
+                        return True
+                    
+                    # 没找到则切回主文档
+                    sb.switch_to_default_content()
+            except Exception:
+                sb.switch_to_default_content()
+                continue
+
         log("ℹ️ 未检测到 Cookie 弹窗，无需处理")
         return False
-        
+
     except Exception as e:
         log(f"⚠️ 处理 Cookie 弹窗时出现异常 (已忽略): {e}")
+        try:
+            sb.switch_to_default_content()
+        except Exception:
+            pass
         return False
     
 # ============================================================
