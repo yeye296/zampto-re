@@ -76,103 +76,106 @@ def log(x):
     
 def handle_cookie_consent(sb) -> bool:
     """
-    处理 Cookie 同意弹窗 (支持常规弹窗及 Google CMP / Funding Choices iframe)
+    处理 Google Funding Choices / Cookie 同意弹窗
     """
     log("🍪 检查是否有 Cookie 同意弹窗...")
+    
+    # 确保当前在顶层主页面
+    try:
+        sb.switch_to_default_content()
+    except Exception:
+        pass
 
-    # 1. 扩充选择器：增加 "Consent"、Google CMP 专属类名 (.fc-cta-consent)
-    cookie_selectors = [
-        # Google Funding Choices 常见类名
+    # 1. Google CMP 专用的高优先级精准选择器（注意：不要写死成 button）
+    # 在 Google CMP 中，Consent 通常是 .fc-cta-consent，或者里面的 p.fc-button-label
+    selectors = [
+        ".fc-cta-consent",
         "button.fc-cta-consent",
-        ".fc-consent-root button.fc-cta-consent",
-        "button.fc-button.fc-cta-consent",
-        # 文本匹配（精准与模糊）
-        '//button[normalize-space(text())="Consent"]',
-        '//button[contains(., "Consent") and not(contains(., "Do not"))]',
-        '//button[normalize-space(text())="Accept"]',
-        '//button[contains(., "Accept")]',
-        '//button[contains(., "Accept All")]',
-        '//button[contains(., "Accept all")]',
-        '//button[contains(., "同意")]',
-        '//button[contains(., "全部接受")]',
-        'button[data-cky-tag="accept-button"]',
-        'button[id*="accept"]',
-        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+        ".fc-consent-root .fc-cta-consent",
+        "//button[normalize-space()='Consent']",
+        "//p[normalize-space()='Consent']/ancestor::button | //p[normalize-space()='Consent']/..",
+        "//*[text()='Consent' and not(contains(text(), 'Do not'))]",
+        "//button[contains(., 'Accept') or contains(., 'Consent')]",
     ]
 
-    combined_xpath = " | ".join([
-        '//button[contains(@class, "fc-cta-consent")]',
-        '//button[normalize-space(text())="Consent"]',
-        '//button[contains(., "Consent") and not(contains(., "Do not"))]',
-        '//button[contains(., "Accept")]',
-        '//button[contains(., "同意")]',
-    ])
+    # 等待弹窗完全渲染（最多等待 2.5 秒）
+    sb.sleep(1.0)
 
-    def try_click_in_current_context():
-        """尝试在当前上下文（主页面或已切入的 iframe）点击"""
-        for selector in cookie_selectors:
-            try:
-                if sb.is_element_visible(selector):
-                    log(f"👀 检测到 Cookie 弹窗按钮，正在点击: {selector}")
-                    try:
-                        sb.click(selector)
-                    except Exception:
-                        sb.js_click(selector)
-                    sb.sleep(1.0)
+    # 方式一：尝试通过标准方式与 JS 点击找到的元素
+    for sel in selectors:
+        try:
+            if sb.is_element_present(sel):
+                log(f"👀 找到 CMP 弹窗元素: {sel}，正在点击...")
+                try:
+                    sb.js_click(sel)
+                except Exception:
+                    sb.click(sel)
+                
+                sb.sleep(1.5)
+                # 检查弹窗遮罩是否还在
+                if not sb.is_element_present(".fc-consent-root"):
+                    log("✅ Cookie 弹窗已成功关闭")
                     return True
-            except Exception:
-                continue
-        return False
+        except Exception:
+            continue
 
+    # 方式二（极速且绝对稳妥）：直接通过浏览器端 JS 深度遍历点击包含 "Consent" 的元素
+    log("🔄 尝试使用原生 JS 扫描并触发 Consent 按钮...")
     try:
-        sb.sleep(0.5)
-
-        # 尝试 1：先在主页面中查找并点击
-        try:
-            if sb.is_element_visible(combined_xpath):
-                if try_click_in_current_context():
-                    log("✅ Cookie 弹窗已在主页面处理完成")
-                    return True
-        except Exception:
-            pass
-
-        # 尝试 2：如果主页面找不到，检查是否存在 Google CMP iframe 并切入
-        iframe_selectors = [
-            'iframe[name*="googlefc"]',
-            'iframe[id*="googlefc"]',
-            'iframe[src*="fundingchoices"]',
-            'iframe.fc-dialog',
-            'iframe[title*="consent"]'
-        ]
-
-        for iframe_sel in iframe_selectors:
-            try:
-                if sb.is_element_present(iframe_sel):
-                    log(f"🔍 发现可能的 CMP iframe: {iframe_sel}，尝试切换上下文...")
-                    sb.switch_to_frame(iframe_sel)
-                    
-                    # 在 iframe 内部尝试查找并点击
-                    if try_click_in_current_context():
-                        sb.switch_to_default_content()
-                        log("✅ Cookie 弹窗已在 iframe 中成功处理")
-                        return True
-                    
-                    # 没找到则切回主文档
-                    sb.switch_to_default_content()
-            except Exception:
-                sb.switch_to_default_content()
-                continue
-
-        log("ℹ️ 未检测到 Cookie 弹窗，无需处理")
-        return False
-
+        js_click_script = """
+        (function() {
+            // 1. 优先找 Google CMP 官方 class
+            var btn = document.querySelector('.fc-cta-consent') || 
+                      document.querySelector('button.fc-cta-consent');
+            if (btn) {
+                btn.click();
+                return 'clicked_class';
+            }
+            
+            // 2. 遍历页面所有元素寻找精确匹配 "Consent" 的可点击节点
+            var all = document.querySelectorAll('button, div, p, span, a');
+            for (var i = 0; i < all.length; i++) {
+                var el = all[i];
+                var text = (el.innerText || el.textContent || '').trim();
+                if (text === 'Consent') {
+                    el.click();
+                    return 'clicked_text';
+                }
+            }
+            return 'not_found';
+        })();
+        """
+        result = sb.execute_script(js_click_script)
+        if result and result != 'not_found':
+            log(f"✅ 通过原生 JS 成功触发点击 ({result})")
+            sb.sleep(1.5)
+            return True
     except Exception as e:
-        log(f"⚠️ 处理 Cookie 弹窗时出现异常 (已忽略): {e}")
-        try:
-            sb.switch_to_default_content()
-        except Exception:
-            pass
-        return False
+        log(f"⚠️ 原生 JS 点击出错: {e}")
+
+    # 方式三（终极兜底）：如果点不到，直接从 DOM 中强行粉碎遮罩层，让页面恢复可用
+    try:
+        remove_overlay_script = """
+        (function() {
+            var roots = document.querySelectorAll('.fc-consent-root, .fc-dialog-container, .fc-dialog-overlay');
+            if (roots.length > 0) {
+                roots.forEach(function(el) { el.remove(); });
+                document.body.style.overflow = 'auto'; // 恢复页面滚动
+                return true;
+            }
+            return false;
+        })();
+        """
+        cleared = sb.execute_script(remove_overlay_script)
+        if cleared:
+            log("🧹 已通过 DOM 强制移除遮罩层，恢复页面操作")
+            sb.sleep(0.5)
+            return True
+    except Exception:
+        pass
+
+    log("ℹ️ 未检测到 Cookie 弹窗或已自动跳过")
+    return False
     
 # ============================================================
 # Telegram 通知：支持图片，图片失败自动退回文字消息
