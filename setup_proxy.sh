@@ -7,30 +7,25 @@ set -e
 export NODE_LINK=${NODE_LINK:-''}
 
 if [ -z "$NODE_LINK" ]; then
-  echo "[INFO] 未配置代理，直连模式"
+  echo "[INFO] 🎯 未配置代理，直连模式"
   echo "IS_PROXY=false" >> $GITHUB_ENV
   exit 0
 fi
 
 if ! command -v jq &> /dev/null; then
-  echo "[ERROR] jq 未安装，正在安装..."
+  echo "[ERROR] ⚠️ jq 未安装，正在安装..."
   sudo apt-get update && sudo apt-get install -y jq
 fi
 
 command -v curl &>/dev/null && COMMAND="curl -so" || command -v wget &>/dev/null && COMMAND="wget -qO" || { red "Error: neither curl nor wget found, please install one of them." >&2; exit 1; }
 
-echo "[INFO] 获取 sing-box 最新版本..."
-latest_version=$(curl -fsS --retry 3 \
-  -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/SagerNet/sing-box/releases" \
-  | jq -r 'if type=="array" then [.[] | select(.prerelease==false and .draft==false)][0].tag_name // empty | sub("^v"; "") else empty end') || latest_version=""
-
+echo "[INFO] 🔍 获取 sing-box 最新版本..."
+latest_version=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==false)][0].tag_name | sub("^v"; "")')
 if [ -z "$latest_version" ]; then
-  echo "[ERROR] 无法获取 sing-box 最新版本,将下载v1.13.14"
-  export latest_version=1.13.14
+  echo "[ERROR] ⚠️ 无法获取 sing-box 最新版本,将下载v1.13.16"
+  export latest_version=1.13.16
 fi
-export latest_version=1.13.14
-echo "[INFO] 最新稳定版本: v${latest_version}"
+echo "[INFO] ⚙️ 最新稳定版: v${latest_version}"
 
 ARCH_RAW=$(uname -m)
 case "${ARCH_RAW}" in
@@ -39,21 +34,31 @@ case "${ARCH_RAW}" in
     'aarch64' | 'arm64') ARCH='arm64' ;;
     'armv7l')  ARCH='armv7' ;;
     's390x')   ARCH='s390x' ;;
-    *) echo "不支持的架构: ${ARCH_RAW}"; exit 1 ;;
+    *) echo "❌ 不支持的架构: ${ARCH_RAW}"; exit 1 ;;
 esac
 
-$COMMAND sing-box-${latest_version}-linux-${ARCH}.tar.gz "https://github.com/SagerNet/sing-box/releases/download/v${latest_version}/sing-box-${latest_version}-linux-${ARCH}.tar.gz"
-tar -xzf "sing-box-${latest_version}-linux-${ARCH}.tar.gz"
-mv "sing-box-${latest_version}-linux-${ARCH}/sing-box" ./
-rm -f "sing-box-${latest_version}-linux-${ARCH}.tar.gz"
-rm -rf "sing-box-${latest_version}-linux-${ARCH}"
+download_version="$latest_version"
+if ! $COMMAND "sing-box-${download_version}-linux-${ARCH}.tar.gz" "https://github.com/SagerNet/sing-box/releases/download/v${download_version}/sing-box-${download_version}-linux-${ARCH}.tar.gz"; then
+    echo "[WARN] ⚠️ 下载版本 v${download_version} 失败，尝试备用版本 v1.13.16"
+    download_version="1.13.16"
+    if ! $COMMAND "sing-box-${download_version}-linux-${ARCH}.tar.gz" "https://github.com/SagerNet/sing-box/releases/download/v${download_version}/sing-box-${download_version}-linux-${ARCH}.tar.gz"; then
+        echo "[ERROR] ❌ 不备用版本也下载失败，请检查网络连接"
+        exit 1
+    fi
+fi
+
+# 解压并授权
+tar -xzf "sing-box-${download_version}-linux-${ARCH}.tar.gz"
+mv "sing-box-${download_version}-linux-${ARCH}/sing-box" ./
+rm -f "sing-box-${download_version}-linux-${ARCH}.tar.gz"
+rm -rf "sing-box-${download_version}-linux-${ARCH}"
 chmod +x sing-box
 
 proto=$(echo "$NODE_LINK" | cut -d':' -f1)
 content="${NODE_LINK#*://}"
 content="${content%%#*}"
 
-echo "[INFO] 协议: $proto"
+echo "[INFO] 🚩 协议: $proto"
 # echo "[INFO] 原始内容: $content"
 
 # 初始化变量
@@ -341,13 +346,13 @@ case "$proto" in
 
 
   *)
-    echo "[ERROR] 不支持的协议: $proto"
+    echo "[ERROR] ⚠️ 不支持的协议: $proto"
     exit 1
     ;;
 esac
 
 if [ -z "$outbound_server" ] || [ -z "$outbound_port" ]; then
-  echo "[ERROR] 无法解析服务器地址或端口"
+  echo "[ERROR] ⚠️ 无法解析服务器地址或端口"
   exit 1
 fi
 
@@ -370,14 +375,14 @@ case "$outbound_type" in
     ;;
   vmess)
     jq_outbound="$jq_outbound,\"uuid\":\"$outbound_uuid\",\"security\":\"auto\""
-    jq_outbound="$jq_outbound,\"transport\":{\"type\":\"$outbound_transport_type\",\"path\":\"$\",\"headers\":{\"Host\":\"$outbound_host\"}}"
+    jq_outbound="$jq_outbound,\"transport\":{\"type\":\"$outbound_transport_type\",\"path\":\"$outbound_path\",\"headers\":{\"Host\":\"$outbound_host\"}}"
     tls_enabled="false"
     [ "$outbound_security" = "tls" ] && tls_enabled="true"
     jq_outbound="$jq_outbound,\"tls\":{\"enabled\":$tls_enabled,\"server_name\":\"$outbound_sni\",\"insecure\":$outbound_insecure,\"utls\":{\"enabled\":true,\"fingerprint\":\"$outbound_fingerprint\"}}"
     ;;
   trojan)
     jq_outbound="$jq_outbound,\"password\":\"$outbound_password\""
-    jq_outbound="$jq_outbound,\"transport\":{\"type\":\"$outbound_transport_type\",\"path\":\"$\",\"headers\":{\"Host\":\"$outbound_host\"}}"
+    jq_outbound="$jq_outbound,\"transport\":{\"type\":\"$outbound_transport_type\",\"path\":\"$outbound_path\",\"headers\":{\"Host\":\"$outbound_host\"}}"
     jq_outbound="$jq_outbound,\"tls\":{\"enabled\":true,\"server_name\":\"$outbound_sni\",\"insecure\":$outbound_insecure,\"utls\":{\"enabled\":true,\"fingerprint\":\"$outbound_fingerprint\"}}"
     ;;
   hysteria2)
@@ -425,15 +430,15 @@ EOF
 # cat sing-box-config.json
 
 if ! jq empty sing-box-config.json 2>/dev/null; then
-  echo "[ERROR] 生成的 sing-box 配置无效"
+  echo "[ERROR] ⚠️ 生成的 sing-box 配置无效"
   # cat sing-box-config.json
   exit 1
 fi
 
-echo "[INFO] ✅ sing-box 配置已生成"
+echo "[INFO] 🟢 sing-box 配置已生成"
 
 # 清理旧进程
-echo "[INFO] 清理旧进程..."
+echo "[INFO] 🧹 清理旧进程..."
 pkill -f sing-box 2>/dev/null || true
 fuser -k 1080/tcp 2>/dev/null || true
 sleep 2
@@ -442,20 +447,20 @@ sleep 2
 sleep 5
 
 if ! pgrep -f sing-box > /dev/null; then
-  echo "[ERROR] sing-box 进程启动失败，查看日志:"
+  echo "[ERROR] ❌️ sing-box 进程启动失败，查看日志:"
   cat sing-box.log
   exit 1
 fi
 
-echo "[INFO] 测试代理连接..."
+echo "[INFO] 🔧 测试代理连接..."
 for i in {1..3}; do
   if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
     echo "[INFO] ✅ 代理连接成功"
     echo "IS_PROXY=true" >> $GITHUB_ENV
     echo "PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
-    exit 0
+    exit 0 
   fi
-  echo "[WARN] 尝试 $i/3..."
+  echo "[WARN] 🟡 尝试 $i/3..."
   sleep 3
 done
 
