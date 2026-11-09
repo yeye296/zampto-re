@@ -27,6 +27,17 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: 设置 sing-box 代理
+        env:
+          NODE_LINK: ${{ secrets.NODE_LINK }}
+        run: |
+          if [ -z "$NODE_LINK" ]; then
+            echo "错误：未配置 NODE_LINK Secret"
+            exit 1
+          fi
+
+          bash setup_proxy.sh
+
       - name: 安装系统和 Python 依赖
         run: |
           sudo apt-get update
@@ -42,17 +53,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install seleniumbase requests
           seleniumbase install chromedriver
-
-      - name: 设置 sing-box 代理
-        env:
-          NODE_LINK: ${{ secrets.NODE_LINK }}
-        run: |
-          if [ -z "$NODE_LINK" ]; then
-            echo "错误：未配置 NODE_LINK Secret"
-            exit 1
-          fi
-
-          bash setup_proxy.sh
 
       - name: 检查本地代理
         run: |
