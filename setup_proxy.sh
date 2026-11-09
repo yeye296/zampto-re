@@ -29,6 +29,7 @@ if [ -z "$latest_version" ]; then
   echo "[ERROR] 无法获取 sing-box 最新版本,将下载v1.13.14"
   export latest_version=1.13.14
 fi
+export latest_version=1.13.14
 echo "[INFO] 最新稳定版本: v${latest_version}"
 
 ARCH_RAW=$(uname -m)
@@ -369,14 +370,14 @@ case "$outbound_type" in
     ;;
   vmess)
     jq_outbound="$jq_outbound,\"uuid\":\"$outbound_uuid\",\"security\":\"auto\""
-    jq_outbound="$jq_outbound,\"transport\":{\"type\":\"$outbound_transport_type\",\"path\":\"$outbound_path\",\"headers\":{\"Host\":\"$outbound_host\"}}"
+    jq_outbound="$jq_outbound,\"transport\":{\"type\":\"$outbound_transport_type\",\"path\":\"$\",\"headers\":{\"Host\":\"$outbound_host\"}}"
     tls_enabled="false"
     [ "$outbound_security" = "tls" ] && tls_enabled="true"
     jq_outbound="$jq_outbound,\"tls\":{\"enabled\":$tls_enabled,\"server_name\":\"$outbound_sni\",\"insecure\":$outbound_insecure,\"utls\":{\"enabled\":true,\"fingerprint\":\"$outbound_fingerprint\"}}"
     ;;
   trojan)
     jq_outbound="$jq_outbound,\"password\":\"$outbound_password\""
-    jq_outbound="$jq_outbound,\"transport\":{\"type\":\"$outbound_transport_type\",\"path\":\"$outbound_path\",\"headers\":{\"Host\":\"$outbound_host\"}}"
+    jq_outbound="$jq_outbound,\"transport\":{\"type\":\"$outbound_transport_type\",\"path\":\"$\",\"headers\":{\"Host\":\"$outbound_host\"}}"
     jq_outbound="$jq_outbound,\"tls\":{\"enabled\":true,\"server_name\":\"$outbound_sni\",\"insecure\":$outbound_insecure,\"utls\":{\"enabled\":true,\"fingerprint\":\"$outbound_fingerprint\"}}"
     ;;
   hysteria2)
